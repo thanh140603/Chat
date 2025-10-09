@@ -48,7 +48,7 @@ public class AuthController {
     public ResponseEntity<Map<String, String>> signin(@Valid @RequestBody AuthRequest request, HttpServletResponse response) {
         User user = userRepository.findByUsername(request.getUsername()).orElse(null);
         if (user == null || !passwordEncoder.matches(request.getPassword(), user.getHashedPassword())) {
-            return ResponseEntity.status(401).build();
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid username or password"));
         }
         String access = jwtTokenProvider.generateAccessToken(user.getUsername(), Map.of("uid", user.getId()));
         String refresh = jwtTokenProvider.generateRefreshToken(user.getUsername());
@@ -71,16 +71,18 @@ public class AuthController {
 
     @PostMapping("/refresh")
     public ResponseEntity<Map<String, String>> refresh(@CookieValue(value = SecurityConstants.REFRESH_COOKIE, required = false) String refreshToken) {
-        if (refreshToken == null) return ResponseEntity.status(401).build();
+        if (refreshToken == null || refreshToken.trim().isEmpty()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Refresh token not found in cookie"));
+        }
         try {
             String username = jwtTokenProvider.getSubject(refreshToken);
             return userRepository.findByUsername(username)
                     .map(u -> ResponseEntity.ok(Map.of(
                             "accessToken", jwtTokenProvider.generateAccessToken(u.getUsername(), Map.of("uid", u.getId()))
                     )))
-                    .orElseGet(() -> ResponseEntity.status(401).build());
+                    .orElseGet(() -> ResponseEntity.status(401).body(Map.of("error", "User not found")));
         } catch (Exception e) {
-            return ResponseEntity.status(403).build();
+            return ResponseEntity.status(403).body(Map.of("error", "Refresh token expired or invalid"));
         }
     }
 

@@ -6,13 +6,15 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
-import org.springframework.data.mongodb.core.index.Indexed;
+import lombok.Data;
+
 import java.time.Instant;
 
 @Document(collection = "friend_requests")
 @CompoundIndexes({
-        @CompoundIndex(name = "from_to_idx", def = "{ 'from': 1, 'to': 1 }")
+        @CompoundIndex(name = "from_to_unique", def = "{ 'from': 1, 'to': 1 }", unique = true)
 })
+@Data
 public class FriendRequest {
     @Id
     private String id;
