@@ -9,6 +9,7 @@ import com.example.server.friend.model.Friend;
 import com.example.server.friend.model.FriendRequest;
 import com.example.server.friend.repository.FriendRepository;
 import com.example.server.friend.repository.FriendRequestRepository;
+import com.example.server.chat.service.ConversationService;
 import com.example.server.user.model.User;
 import com.example.server.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -23,15 +24,18 @@ public class FriendService {
     private final FriendRequestRepository friendRequestRepository;
     private final UserRepository userRepository;
     private final FriendMapper friendMapper;
+    private final ConversationService conversationService;
 
     public FriendService(FriendRepository friendRepository, 
                         FriendRequestRepository friendRequestRepository,
                         UserRepository userRepository,
-                        FriendMapper friendMapper) {
+                        FriendMapper friendMapper,
+                        ConversationService conversationService) {
         this.friendRepository = friendRepository;
         this.friendRequestRepository = friendRequestRepository;
         this.userRepository = userRepository;
         this.friendMapper = friendMapper;
+        this.conversationService = conversationService;
     }
 
     @Transactional
@@ -77,6 +81,9 @@ public class FriendService {
 
         // Delete the friend request
         friendRequestRepository.deleteById(requestId);
+
+        // Ensure a DIRECT conversation exists between the two users
+        conversationService.ensureDirectBetweenUsers(request.getFrom(), request.getTo());
     }
 
     @Transactional
@@ -124,6 +131,17 @@ public class FriendService {
                 .collect(Collectors.toList());
 
         return new FriendRequestsListDTO(sentDTOs, receivedDTOs);
+    }
+
+    @Transactional
+    public void removeFriend(String userId, String friendId) {
+        // Check if friendship exists
+        if (!friendRepository.existsFriendship(userId, friendId)) {
+            throw new ApiException("Friendship not found");
+        }
+
+        // Delete the friendship (both directions)
+        friendRepository.deleteFriendship(userId, friendId);
     }
 
 }

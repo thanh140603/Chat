@@ -13,8 +13,8 @@ public interface FriendRequestRepository extends MongoRepository<FriendRequest, 
     @Query("{ $or: [ { 'from': ?0, 'to': ?1 }, { 'from': ?1, 'to': ?0 } ] }")
     Optional<FriendRequest> findRequestBetweenUsers(String userA, String userB);
     
-    // Check if friend request exists (boolean)
-    @Query("{ $or: [ { 'from': ?0, 'to': ?1 }, { 'from': ?1, 'to': ?0 } ] }")
+    // Check if friend request exists (boolean) — existence projection
+    @Query(value = "{ $or: [ { 'from': ?0, 'to': ?1 }, { 'from': ?1, 'to': ?0 } ] }", exists = true)
     boolean existsRequestBetweenUsers(String userA, String userB);
     
     // Get all sent requests by a user

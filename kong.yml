@@ -1,0 +1,141 @@
+# Kong Gateway Configuration cho toàn bộ hệ thống Chat App
+# Bao gồm Frontend, REST API, và WebSocket services
+
+_format_version: "2.1"
+_transform: true
+
+# Services Configuration
+services:
+  # Frontend Service - Serve static files
+  - name: chat-frontend
+    url: http://chatapp-frontend:3000
+    routes:
+      - name: frontend-static
+        paths: ["/"]
+        methods: ["GET"]
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+              headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "Authorization"]
+              exposed_headers: ["X-Auth-Token"]
+              credentials: true
+              max_age: 3600
+              preflight_continue: false
+
+  # REST API Service
+  - name: chat-rest-api
+    url: http://chatapp-rest-api:8080
+    routes:
+      # Auth routes - NO JWT required (chỉ signup, signin, refresh, check, signout)
+      - name: auth-public-route
+        paths: ["/api/auth/signup", "/api/auth/signin", "/api/auth/refresh", "/api/auth/check", "/api/auth/signout"]
+        methods: ["GET", "POST", "OPTIONS"]
+        strip_path: false
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "OPTIONS"]
+              headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "Authorization"]
+              exposed_headers: ["X-Auth-Token"]
+              credentials: true
+              max_age: 3600
+              preflight_continue: false
+      # Protected API routes - JWT required + kong-jwt2header để truyền userId
+      - name: rest-api-route
+        paths: ["/api/users", "/api/conversations", "/api/messages", "/api/friends", "/api/calls"]
+        methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              key_claim_name: iss
+              claims_to_verify: []
+              anonymous: null
+              run_on_preflight: true
+          - name: kong-jwt2header
+            config:
+              strip_claims: "false"
+              token_required: "true"
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+              headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "Authorization"]
+              exposed_headers: ["X-Auth-Token"]
+              credentials: true
+              max_age: 3600
+              preflight_continue: false
+  # Debug Service - để xem headers được thêm vào
+  - name: debug-service
+    protocol: http
+    host: httpbin.org
+    port: 80
+    path: /headers
+    routes:
+      - name: debug-route
+        paths: ["/debug"]
+        methods: ["GET"]
+        strip_path: true
+        plugins:
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "OPTIONS"]
+              headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "Authorization"]
+              exposed_headers: ["X-Auth-Token"]
+              credentials: true
+              max_age: 3600
+              preflight_continue: false
+
+  # WebSocket Service
+  - name: chat-websocket
+    url: http://chatapp-websocket:8081
+    routes:
+      - name: websocket-route
+        paths: ["/ws", "/ws-message"]
+        methods: ["GET", "POST"]
+        strip_path: false
+        protocols: ["http", "https"]
+        plugins:
+          - name: jwt
+            config:
+              secret_is_base64: false
+              key_claim_name: iss
+              claims_to_verify: []
+              anonymous: null
+              run_on_preflight: true
+          - name: kong-jwt2header
+            config:
+              strip_claims: "false"
+              token_required: "true"
+          - name: cors
+            config:
+              origins: ["*"]
+              methods: ["GET", "POST", "OPTIONS"]
+              headers: ["Accept", "Accept-Version", "Content-Length", "Content-MD5", "Content-Type", "Date", "X-Auth-Token", "Authorization", "Upgrade", "Connection", "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Protocol"]
+              exposed_headers: ["X-Auth-Token"]
+              credentials: true
+              max_age: 3600
+              preflight_continue: false
+
+
+# Global Plugins
+plugins:
+- config:
+    strip_claims: "false"
+    token_required: "false"
+  enabled: true
+  name: kong-jwt2header
+
+# Consumers
+consumers:
+  - username: chat-app-client
+    jwt_secrets:
+      - key: chat-app
+        secret: ${JWT_SECRET}
+        algorithm: HS256

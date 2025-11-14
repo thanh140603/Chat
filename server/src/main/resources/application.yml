@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: server
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/chat_app}
+      database: ${MONGODB_DB:chat_app}
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:kafka:9092}
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${PORT:8080}
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: INFO
+    org.springframework.data.mongodb.core.MongoTemplate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:V1J2eWJqN2hTQ2p1Z1NpbFhGQ1pVZkVwcVl3QW1hT3I=}
+    issuer: chat-app
+    expirationSeconds: ${JWT_EXP_SECONDS:3600} # access 1h
+    refreshExpirationSeconds: ${JWT_REFRESH_EXP_SECONDS:2592000} # refresh 30d
+
+cloudinary:
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+  api-key: ${CLOUDINARY_API_KEY:}
+  api-secret: ${CLOUDINARY_API_SECRET:}
+
+# Kafka configuration (disabled by default)
+spring.kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP:}
+  producer:
+    key-serializer: org.apache.kafka.common.serialization.StringSerializer
+    value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  consumer:
+    group-id: chat-app-server
+    key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    auto-offset-reset: earliest
+

@@ -1,9 +1,13 @@
-# syntax=docker/dockerfile:1
-FROM eclipse-temurin:17-jre as runtime
-
-ARG JAR_FILE=target/*.jar
+# Multi-stage build
+FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
-COPY ${JAR_FILE} app.jar
+COPY pom.xml .
+COPY src ./src
+RUN mvn -q -DskipTests package
+
+FROM eclipse-temurin:17-jre as runtime
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
 
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
 EXPOSE 8080

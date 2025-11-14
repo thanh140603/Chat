@@ -1,0 +1,217 @@
+services:
+  # Kong API Gateway with JWT2Header Plugin
+  kong:
+    build: 
+      context: ./kong
+      dockerfile: Dockerfile
+    image: kong-custom:latest
+    container_name: chatapp-kong
+    ports:
+      - "8000:8000"  # Kong proxy
+      - "8001:8001"  # Kong admin API
+      - "8002:8002"  # Kong Manager
+    environment:
+      - KONG_ADMIN_LISTEN=0.0.0.0:8001
+      - KONG_PROXY_LISTEN=0.0.0.0:8000
+      - KONG_MANAGER_LISTEN=0.0.0.0:8002
+      - KONG_DATABASE=off
+      - KONG_PLUGINS=bundled,kong-jwt2header
+      - KONG_DECLARATIVE_CONFIG=/tmp/kong.yml
+      - JWT_SECRET=${JWT_SECRET}
+    volumes:
+      - ./kong.yml:/tmp/kong.yml.template:ro
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - rest-api
+      - websocket-service
+    networks:
+      - chat-network
+
+  # Frontend Service - Dev/Production Mode
+  frontend:
+    build: 
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        BUILD_MODE: ${BUILD_MODE:-production}
+    image: chat-app-frontend:${BUILD_MODE:-production}
+    container_name: chatapp-frontend
+    restart: unless-stopped
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+      - VITE_WS_URL=ws://localhost:8000/ws
+      - NODE_ENV=${BUILD_MODE:-production}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Volume mounts chỉ cho dev mode (khi BUILD_MODE=dev)
+      - ./client/src:/app/src:ro
+      - ./client/public:/app/public:ro
+      - ./client/index.html:/app/index.html:ro
+      - ./client/vite.config.ts:/app/vite.config.ts:ro
+      - ./client/tsconfig.json:/app/tsconfig.json:ro
+      - ./client/tsconfig.app.json:/app/tsconfig.app.json:ro
+      - ./client/tailwind.config.js:/app/tailwind.config.js:ro
+      - ./client/postcss.config.js:/app/postcss.config.js:ro
+    networks:
+      - chat-network
+
+  # REST API Service
+  rest-api:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile
+    image: chat-app-rest-api:latest
+    container_name: chatapp-rest-api
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: kong
+      MONGODB_URI: mongodb://mongo:27017/chat_app
+      MONGODB_DB: chat_app
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP: "kafka:9092"
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP_SECONDS: ${JWT_EXP_SECONDS:-3600}
+      JWT_REFRESH_EXP_SECONDS: ${JWT_REFRESH_EXP_SECONDS:-2592000}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # WebSocket Service
+  websocket-service:
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile
+    image: chat-app-websocket:latest
+    container_name: chatapp-websocket
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: kong
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP_SECONDS: ${JWT_EXP_SECONDS:-3600}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks:
+      - chat-network
+    command: ["sh", "-c", "sleep 30 && java -jar /app.jar"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # MongoDB Database
+  mongo:
+    image: mongo:7
+    container_name: chatapp-mongo
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_DATABASE: chat_app
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  # Redis Cache
+  redis:
+    image: redis:7
+    container_name: chatapp-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: chatapp-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - chat-network
+
+  # Kafka Message Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: chatapp-kafka
+    depends_on:
+      zookeeper:
+        condition: service_started
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - chat-network
+
+volumes:
+  mongo_data:
+
+networks:
+  chat-network:
+    driver: bridge

@@ -57,6 +57,14 @@ public class FriendController {
     public FriendRequestsListDTO getFriendRequests(@AuthenticationPrincipal CustomUserDetails principal) {
         return friendService.getFriendRequests(principal.getId());
     }
+
+    // DELETE /api/friends/{friendId} - Xóa bạn bè
+    @DeleteMapping("/{friendId}")
+    public void removeFriend(
+            @AuthenticationPrincipal CustomUserDetails principal,
+            @PathVariable String friendId) {
+        friendService.removeFriend(principal.getId(), friendId);
+    }
 }
 
 

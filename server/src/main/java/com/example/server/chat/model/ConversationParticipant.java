@@ -7,6 +7,7 @@ import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
+import lombok.Data;
 import java.time.Instant;
 
 @Document(collection = "participants")
@@ -15,6 +16,7 @@ import java.time.Instant;
         @CompoundIndex(name = "user_active_idx", def = "{ 'userId': 1, 'isActive': 1 }"),
         @CompoundIndex(name = "conv_active_idx", def = "{ 'conversationId': 1, 'isActive': 1 }")
 })
+@Data
 public class ConversationParticipant {
     @Id
     private String id;
@@ -29,7 +31,10 @@ public class ConversationParticipant {
     private ParticipantRole role;
     private boolean isActive = true;
     private Instant lastSeenAt;
+    private String lastReadMessageId; // ID of the last message that this user has read
     private long unreadCount;
+    private boolean isFavorite = false; // User's favorite status for this conversation
+    private boolean isMuted = false; // User's mute status for this conversation (no notifications)
 
     @CreatedDate
     private Instant createdAt;
