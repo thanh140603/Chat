@@ -10,8 +10,7 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import java.util.Map;
 
 /**
- * Simplified handshake interceptor for Kong Gateway mode
- * Kong handles JWT validation, so we just extract user info from headers
+ * Interceptor for WebSocket handshake: extract user info from Kong Gateway headers
  */
 @Component
 @Profile("kong")
@@ -23,17 +22,17 @@ public class KongHandshakeInterceptor implements HandshakeInterceptor {
         this.userExtractor = userExtractor;
     }
 
+    /**
+     * Check authentication before handshake: only accept requests through Kong Gateway
+     */
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
         try {
-            // Kong đã verify JWT và thêm user info vào headers
             if (userExtractor.isAuthenticated(request)) {
                 userExtractor.addUserInfoToAttributes(request, attributes);
                 return true;
             }
-            
-            // Không có fallback - chỉ accept requests qua Kong Gateway
             return false;
         } catch (Exception ex) {
             return false;
@@ -43,6 +42,5 @@ public class KongHandshakeInterceptor implements HandshakeInterceptor {
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                WebSocketHandler wsHandler, Exception exception) {
-        // no-op
     }
 }

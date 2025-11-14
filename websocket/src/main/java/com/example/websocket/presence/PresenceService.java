@@ -41,6 +41,9 @@ public class PresenceService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Handle user online: update Redis, fetch friend list and create notification messages
+     */
     public PresenceOnlineResult handleUserOnline(String userId, String username, String accessToken) {
         Long sessionCount = redisTemplate.opsForValue().increment(sessionKey(userId));
         redisTemplate.expire(sessionKey(userId), Duration.ofHours(12));
@@ -55,8 +58,6 @@ public class PresenceService {
 
         long timestamp = System.currentTimeMillis();
         
-        // Always notify all friends when user comes online (not just first session)
-        // This ensures synchronization when friends connect later
         for (FriendInfo friend : friends) {
             if (friend.id() == null) continue;
             String payload = buildPresenceEvent(
@@ -70,17 +71,18 @@ public class PresenceService {
             messages.add(new PresenceMessage(friend.id(), payload));
         }
         
-        // Always send PRESENCE_SYNC to the connecting user with all their friends' status
         String syncPayload = buildPresenceSync(userId, friends);
         messages.add(new PresenceMessage(userId, syncPayload));
 
         return new PresenceOnlineResult(friendIds, messages);
     }
 
+    /**
+     * Handle user offline: decrement session count, update last seen and notify friends
+     */
     public List<PresenceMessage> handleUserOffline(String userId, String username, List<String> cachedFriendIds) {
         Long sessionsLeft = redisTemplate.opsForValue().decrement(sessionKey(userId));
         if (sessionsLeft != null && sessionsLeft > 0) {
-            // still have active sessions
             redisTemplate.opsForValue().set(sessionKey(userId), sessionsLeft.toString(), Duration.ofHours(12));
             return Collections.emptyList();
         }
@@ -114,6 +116,9 @@ public class PresenceService {
         return messages;
     }
 
+    /**
+     * Build JSON payload for presence event (online/offline)
+     */
     private String buildPresenceEvent(String status,
                                       String userId,
                                       String username,
@@ -137,6 +142,9 @@ public class PresenceService {
         }
     }
 
+    /**
+     * Build JSON payload for presence sync: online/offline status of all friends
+     */
     private String buildPresenceSync(String userId, List<FriendInfo> friends) {
         try {
             List<Map<String, Object>> friendStatuses = new ArrayList<>();
@@ -165,8 +173,10 @@ public class PresenceService {
         }
     }
 
+    /**
+     * Check if user is online based on session count in Redis
+     */
     private boolean isOnline(String userId) {
-        // First check session count - this is the most reliable indicator
         String sessionValue = redisTemplate.opsForValue().get(sessionKey(userId));
         if (sessionValue == null || sessionValue.isBlank()) {
             log.info("User {} has no session key in Redis (null or blank) - considered offline", userId);
@@ -178,12 +188,10 @@ public class PresenceService {
                 log.info("User {} has session count {} - considered online", userId, sessionCount);
                 return true;
             }
-            // Session count is 0 or negative - user is offline
             log.info("User {} has session count {} (<=0) - considered offline", userId, sessionCount);
             return false;
         } catch (NumberFormatException ex) {
             log.warn("Invalid session count value for user {}: '{}' - checking status key as fallback", userId, sessionValue);
-            // If session count is invalid, check status key as fallback
             String status = redisTemplate.opsForValue().get(statusKey(userId));
             boolean isOnlineFromStatus = "online".equals(status);
             log.info("User {} status key: '{}' - considered {}", userId, status, isOnlineFromStatus ? "online" : "offline");
@@ -191,6 +199,9 @@ public class PresenceService {
         }
     }
 
+    /**
+     * Get last seen timestamp of user from Redis
+     */
     private Long getLastSeen(String userId) {
         String value = redisTemplate.opsForValue().get(lastSeenKey(userId));
         if (value == null) {
@@ -203,6 +214,9 @@ public class PresenceService {
         }
     }
 
+    /**
+     * Cache friend list to Redis
+     */
     private void cacheFriendList(String userId, List<FriendInfo> friends) {
         try {
             if (friends == null || friends.isEmpty()) {
@@ -216,6 +230,9 @@ public class PresenceService {
         }
     }
 
+    /**
+     * Load friend list from Redis cache
+     */
     private List<FriendInfo> loadFriendList(String userId) {
         try {
             String json = redisTemplate.opsForValue().get(friendsKey(userId));

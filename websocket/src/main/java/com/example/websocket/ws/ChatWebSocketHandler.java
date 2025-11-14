@@ -29,6 +29,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         this.presenceService = presenceService;
     }
 
+    /**
+     * Handle WebSocket connection established: save session and notify presence online
+     */
     @Override
     public void afterConnectionEstablished(@NonNull WebSocketSession session) throws Exception {
         Object userId = session.getAttributes().get("userId");
@@ -56,7 +59,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     }
                     if (result.messages() != null) {
                         for (PresenceMessage message : result.messages()) {
-                            // Send PRESENCE_SYNC directly to the connecting session
                             if (message.targetUserId().equals(userId.toString()) && session.isOpen()) {
                                 try {
                                     session.sendMessage(new org.springframework.web.socket.TextMessage(message.payload()));
@@ -65,7 +67,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                                     log.warn("Failed to send PRESENCE_SYNC to user {} on connection", userId, ex);
                                 }
                             } else {
-                                // Send presence updates to friends
                                 broadcastToUser(message.targetUserId(), message.payload());
                             }
                         }
@@ -77,13 +78,15 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * Handle text messages from client: join conversation, typing indicators, and WebRTC signaling
+     */
     @Override
     protected void handleTextMessage(@NonNull WebSocketSession session, @NonNull TextMessage message) throws Exception {
         String payload = message.getPayload();
         Object userId = session.getAttributes().get("userId");
         
         if (payload.contains("\"type\":\"join\"")) {
-            // Handle conversation join
             String conversationId = extractField(payload, "conversationId");
             if (conversationId != null && !conversationId.isBlank()) {
                 conversationIdToSessions
@@ -105,29 +108,27 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 }
             }
         } else if (payload.contains("\"type\":\"typing_start\"")) {
-            // Handle typing start
             String conversationId = extractField(payload, "conversationId");
             if (conversationId != null && userId != null) {
                 handleTyping(conversationId, userId.toString(), true);
             }
         } else if (payload.contains("\"type\":\"typing_stop\"")) {
-            // Handle typing stop
             String conversationId = extractField(payload, "conversationId");
             if (conversationId != null && userId != null) {
                 handleTyping(conversationId, userId.toString(), false);
             }
         } else if (payload.contains("\"type\":\"call_offer\"")) {
-            // Handle WebRTC offer
             handleCallOffer(payload, userId != null ? userId.toString() : null);
         } else if (payload.contains("\"type\":\"call_answer\"")) {
-            // Handle WebRTC answer
             handleCallAnswer(payload, userId != null ? userId.toString() : null);
         } else if (payload.contains("\"type\":\"call_ice_candidate\"")) {
-            // Handle ICE candidate
             handleCallIceCandidate(payload, userId != null ? userId.toString() : null);
         }
     }
 
+    /**
+     * Handle WebSocket connection closed: remove session and notify presence offline
+     */
     @Override
     public void afterConnectionClosed(@NonNull WebSocketSession session, @NonNull CloseStatus status) throws Exception {
         Object userId = session.getAttributes().get("userId");
@@ -172,6 +173,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         conversationIdToSessions.values().forEach(set -> set.remove(session));
     }
 
+    /**
+     * Send message to all sessions in a conversation
+     */
     public void broadcastToConversation(String conversationId, String jsonMessage) {
         Set<WebSocketSession> sessions = conversationIdToSessions.get(conversationId);
         if (sessions == null) return;
@@ -184,8 +188,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    // Helper methods for user status notifications
-    
+    /**
+     * Notify user online/offline status to participants in conversations
+     */
     private void notifyConversationsPresence(Set<String> conversationIds, String userId, String username, boolean isOnline) {
         long timestamp = System.currentTimeMillis();
         String status = isOnline ? "online" : "offline";
@@ -211,7 +216,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
-    // Typing indicator handlers
+    /**
+     * Handle typing indicator: send typing notification to other participants in conversation
+     */
     private void handleTyping(String conversationId, String userId, boolean isTyping) {
         String message = String.format(
                 "{\"type\":\"typing\",\"conversationId\":\"%s\",\"userId\":\"%s\",\"isTyping\":%s,\"timestamp\":%d}",
@@ -234,6 +241,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
+    /**
+     * Send message to all sessions of a user
+     */
     public void broadcastToUser(String userId, String message) {
         Set<WebSocketSession> sessions = userIdToSessions.get(userId);
         if (sessions == null || sessions.isEmpty()) {
@@ -249,6 +259,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
+    /**
+     * Extract field value from JSON string
+     */
     private String extractField(String json, String key) {
         String pattern = "\"" + key + "\":\"";
         int start = json.indexOf(pattern);
@@ -259,8 +272,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         return json.substring(start, end);
     }
     
-    // Call signaling handlers
-    
+    /**
+     * Handle WebRTC offer: relay offer from caller to receiver
+     */
     private void handleCallOffer(String payload, String senderUserId) {
         if (senderUserId == null) {
             log.warn("Call offer received without userId");
@@ -269,7 +283,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         
         try {
             log.info("Call offer received from user {}: {}", senderUserId, payload);
-            // Extract callId and targetUserId from payload
             String callId = extractField(payload, "callId");
             String targetUserId = extractField(payload, "targetUserId");
             
@@ -281,7 +294,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             
-            // Relay offer to target user
             broadcastToUser(targetUserId, payload);
             log.info("Call offer relayed: callId={}, from={}, to={}", callId, senderUserId, targetUserId);
         } catch (Exception e) {
@@ -289,6 +301,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
+    /**
+     * Handle WebRTC answer: relay answer from receiver to caller
+     */
     private void handleCallAnswer(String payload, String senderUserId) {
         if (senderUserId == null) {
             log.warn("Call answer received without userId");
@@ -296,7 +311,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
         
         try {
-            // Extract callId and targetUserId from payload
             String callId = extractField(payload, "callId");
             String targetUserId = extractField(payload, "targetUserId");
             
@@ -305,7 +319,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             
-            // Relay answer to target user (caller)
             broadcastToUser(targetUserId, payload);
             log.info("Call answer relayed: callId={}, from={}, to={}", callId, senderUserId, targetUserId);
         } catch (Exception e) {
@@ -313,6 +326,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
+    /**
+     * Handle WebRTC ICE candidate: relay ICE candidate between peers
+     */
     private void handleCallIceCandidate(String payload, String senderUserId) {
         if (senderUserId == null) {
             log.warn("Call ICE candidate received without userId");
@@ -320,7 +336,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
         
         try {
-            // Extract callId and targetUserId from payload
             String callId = extractField(payload, "callId");
             String targetUserId = extractField(payload, "targetUserId");
             
@@ -329,7 +344,6 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             
-            // Relay ICE candidate to target user
             broadcastToUser(targetUserId, payload);
             log.debug("Call ICE candidate relayed: callId={}, from={}, to={}", callId, senderUserId, targetUserId);
         } catch (Exception e) {

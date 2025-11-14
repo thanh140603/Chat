@@ -45,7 +45,6 @@ public class MessageController {
             (request.getImgUrl() == null || request.getImgUrl().isBlank())) {
             throw new IllegalArgumentException("Either content or imgUrl is required");
         }
-        // For direct, if conversationId null, service should create/find it based on recipientId
         Message saved = messageService.createMessage(
                 principal.getId(),
                 request.getConversationId(),
@@ -129,13 +128,10 @@ public class MessageController {
             throw new IllegalArgumentException("File is required");
         }
 
-        // Validate file size: Cloudinary free plan limits
-        // - Images and raw files: 10MB max
-        // - Videos: 100MB max
-        long maxSizeBytes = 10 * 1024 * 1024; // 10MB for images and raw files
+        long maxSizeBytes = 10 * 1024 * 1024;
         String contentType = file.getContentType();
         if (contentType != null && contentType.startsWith("video/")) {
-            maxSizeBytes = 100 * 1024 * 1024; // 100MB for videos
+            maxSizeBytes = 100 * 1024 * 1024;
         }
         
         if (file.getSize() > maxSizeBytes) {
@@ -176,7 +172,6 @@ public class MessageController {
             @AuthenticationPrincipal CustomUserDetails principal,
             @RequestParam("url") String fileUrl,
             @RequestParam(value = "publicId", required = false) String publicIdParam) {
-        // Legacy fallback for clients that still POST the old route
         return downloadFile(principal, fileUrl, null, publicIdParam, false);
     }
 
@@ -206,20 +201,16 @@ public class MessageController {
                     String path = url.getPath();
                     log.info("Extracting publicId from URL path: {}", path);
                     
-                    // Look for /raw/upload/ or /auto/upload/ pattern
                     int uploadIndex = path.indexOf("/raw/upload/");
                     if (uploadIndex < 0) {
                         uploadIndex = path.indexOf("/auto/upload/");
                     }
                     
                     if (uploadIndex >= 0) {
-                        // Skip version number (e.g., /v1762955409/)
                         int versionStart = uploadIndex + (path.contains("/raw/upload/") ? 12 : 12);
                         int versionEnd = path.indexOf('/', versionStart);
                         if (versionEnd >= 0) {
-                            // Extract everything after version, including folder (e.g., "messages/files/IELTS_20251112135007")
                             publicId = path.substring(versionEnd + 1);
-                            // Remove file extension if present (Cloudinary public_id doesn't include extension)
                             int lastDot = publicId.lastIndexOf('.');
                             if (lastDot > 0) {
                                 publicId = publicId.substring(0, lastDot);
@@ -232,7 +223,6 @@ public class MessageController {
                             }
                         }
                     } else {
-                        // Fallback: extract from end of path
                         publicId = path.substring(path.lastIndexOf('/') + 1);
                         int lastDot = publicId.lastIndexOf('.');
                         if (lastDot > 0) {
@@ -258,7 +248,6 @@ public class MessageController {
                 } catch (Exception e) {
                     log.warn("Failed to generate download URL via Cloudinary API, trying to generate from URL: {}", e.getMessage());
                     try {
-                        // Try to generate download URL from the original URL
                         downloadUrl = fileStorageService.generateDownloadUrlFromUrl(decodedUrl, filename);
                     } catch (Exception ex) {
                         log.warn("Failed to generate download URL from URL, using original URL: {}", ex.getMessage());
@@ -266,7 +255,6 @@ public class MessageController {
                     }
                 }
             } else {
-                // Try to generate download URL from URL even without publicId
                 try {
                     downloadUrl = fileStorageService.generateDownloadUrlFromUrl(decodedUrl, filename);
                 } catch (Exception e) {
@@ -280,33 +268,27 @@ public class MessageController {
                 return ResponseEntity.internalServerError().build();
             }
 
-            // If proxy=true, stream the file directly instead of returning URL
             if (proxy) {
                 try {
-                    // Use Cloudinary SDK to download file content directly
                     if (publicId != null && !publicId.isBlank()) {
                         java.io.InputStream fileInputStream = fileStorageService.downloadFileContent(publicId);
                         
-                        // Determine filename
                         String downloadFilename = filename;
                         if (downloadFilename == null || downloadFilename.isBlank()) {
-                            // Extract from publicId
                             int lastSlash = publicId.lastIndexOf('/');
                             if (lastSlash >= 0 && lastSlash < publicId.length() - 1) {
                                 downloadFilename = publicId.substring(lastSlash + 1);
                             } else {
                                 downloadFilename = publicId;
                             }
-                            // Remove extension if present (Cloudinary public_id may not include extension)
                             int lastDot = downloadFilename.lastIndexOf('.');
                             if (lastDot > 0) {
                                 downloadFilename = downloadFilename.substring(0, lastDot);
                             }
-                            downloadFilename = downloadFilename + ".pdf"; // Default to PDF for raw files
+                            downloadFilename = downloadFilename + ".pdf";
                         }
                         
-                        // Get content type from original request or default
-                        String contentType = "application/pdf"; // Default for raw files
+                        String contentType = "application/pdf";
                         
                         org.springframework.core.io.InputStreamResource resource = 
                             new org.springframework.core.io.InputStreamResource(fileInputStream);
@@ -364,18 +346,15 @@ public class MessageController {
         r.setContent(m.getContent());
         r.setImageUrl(m.getImageUrl());
         r.setCreatedAt(m.getCreatedAt());
-        // Set originalCreatedAt: use stored value, or fallback to createdAt if null (for old messages)
         if (m.getOriginalCreatedAt() != null) {
             r.setOriginalCreatedAt(m.getOriginalCreatedAt());
         } else {
-            // For old messages without originalCreatedAt, use createdAt as fallback
             r.setOriginalCreatedAt(m.getCreatedAt());
         }
         if (m.getUpdatedAt() != null) {
             r.setUpdatedAt(m.getUpdatedAt());
         }
         
-        // Set forwarding information
         if (m.getForwardedFromMessageId() != null) {
             r.setForwardedFromMessageId(m.getForwardedFromMessageId());
             r.setForwardedFromConversationId(m.getForwardedFromConversationId());

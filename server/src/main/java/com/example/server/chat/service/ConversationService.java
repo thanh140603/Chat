@@ -56,24 +56,24 @@ public class ConversationService {
         this.fileStorageService = fileStorageService;
     }
     
+    /**
+     * Create new conversation with participants
+     */
     @Transactional
     public ConversationResponse create(String creatorId, ConversationRequest request) {
-        // Validate users exist
         List<String> allUserIds = request.getMemberIds();
-        allUserIds.add(creatorId); // Add creator to participants
+        allUserIds.add(creatorId);
         
         List<User> users = userRepository.findAllById(allUserIds);
         if (users.size() != allUserIds.size()) {
             throw new ApiException("Some users not found");
         }
         
-        // Create conversation
         Conversation conversation = conversationMapper.toEntity(request);
         conversation.setGroupCreatedByUserId(creatorId);
         
         Conversation savedConversation = conversationRepository.save(conversation);
         
-        // Create participants
         for (String userId : allUserIds) {
             ConversationParticipant participant = new ConversationParticipant();
             participant.setConversationId(savedConversation.getId());
@@ -89,8 +89,10 @@ public class ConversationService {
         return conversationMapper.toResponse(savedConversation);
     }
     
+    /**
+     * Get user conversations list with participants info and unread count
+     */
     public List<ConversationResponse> getUserConversations(String userId) {
-        // Get conversation IDs where user is participant
         List<ConversationParticipant> participants = participantRepository.findByUserIdAndIsActiveTrue(userId);
         List<String> conversationIds = participants.stream()
                 .map(ConversationParticipant::getConversationId)
@@ -100,18 +102,15 @@ public class ConversationService {
             return List.of();
         }
         
-        // Get conversations
         List<Conversation> conversations = conversationRepository.findByIds(conversationIds);
         
         return conversations.stream()
                 .map(conversation -> {
                     ConversationResponse response = conversationMapper.toResponse(conversation);
                     
-                    // Get participants for this conversation
                     List<ConversationParticipant> conversationParticipants = participantRepository
                             .findByConversationIdAndIsActiveTrue(conversation.getId());
                     
-                    // Convert to ParticipantResponse
                     List<ConversationResponse.ParticipantResponse> participantResponses = conversationParticipants.stream()
                             .map(participant -> {
                                 User user = userRepository.findById(participant.getUserId()).orElse(null);
@@ -125,7 +124,7 @@ public class ConversationService {
                                 participantResponse.setRole(participant.getRole().name().toLowerCase());
                                 participantResponse.setJoinedAt(participant.getJoinedAt());
                                 participantResponse.setLastSeenAt(participant.getLastSeenAt());
-                                participantResponse.setLastReadMessageId(participant.getLastReadMessageId()); // Set lastReadMessageId
+                                participantResponse.setLastReadMessageId(participant.getLastReadMessageId());
                                 return participantResponse;
                             })
                             .filter(java.util.Objects::nonNull)
@@ -133,9 +132,7 @@ public class ConversationService {
                     
                     response.setParticipants(participantResponses);
                     
-                    // Set name based on conversation type
                     if (conversation.getType() == ConversationType.DIRECT) {
-                        // For DIRECT: show the other person's name
                         String otherPersonName = participantResponses.stream()
                                 .filter(p -> !p.getId().equals(userId))
                                 .map(p -> p.getDisplayName() != null ? p.getDisplayName() : p.getUsername())
@@ -150,11 +147,9 @@ public class ConversationService {
                                 .orElse(null);
                         response.setAvatarUrl(otherAvatar);
                     } else if (conversation.getType() == ConversationType.GROUP) {
-                        // For GROUP: use groupName if available, otherwise show members list
                         if (conversation.getGroupName() != null && !conversation.getGroupName().trim().isEmpty()) {
                             response.setName(conversation.getGroupName());
                         } else {
-                            // Show comma-separated list of member names
                             String membersList = participantResponses.stream()
                                     .map(p -> p.getDisplayName() != null ? p.getDisplayName() : p.getUsername())
                                     .collect(Collectors.joining(", "));
@@ -163,7 +158,6 @@ public class ConversationService {
                         response.setAvatarUrl(conversation.getGroupAvatarUrl());
                     }
                     
-                    // Get unread count for current user
                     ConversationParticipant userParticipant = conversationParticipants.stream()
                             .filter(p -> p.getUserId().equals(userId))
                             .findFirst()
@@ -175,7 +169,6 @@ public class ConversationService {
                         response.setMuted(userParticipant.isMuted());
                     }
                     
-                    // Set pinned message info
                     if (conversation.getPinnedMessageId() != null) {
                         response.setPinnedMessageId(conversation.getPinnedMessageId());
                         response.setPinnedAt(conversation.getPinnedAt());
@@ -187,13 +180,15 @@ public class ConversationService {
                 .collect(Collectors.toList());
     }
     
+    /**
+     * Get conversation by ID
+     */
     public ConversationResponse getById(String conversationId) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new ApiException("Conversation not found"));
         
         ConversationResponse response = conversationMapper.toResponse(conversation);
         
-        // Set pinned message info
         if (conversation.getPinnedMessageId() != null) {
             response.setPinnedMessageId(conversation.getPinnedMessageId());
             response.setPinnedAt(conversation.getPinnedAt());
@@ -207,6 +202,9 @@ public class ConversationService {
         return response;
     }
     
+    /**
+     * Update conversation info (group name, avatar)
+     */
     @Transactional
     public ConversationResponse updateConversation(String conversationId, String requesterId, ConversationUpdateRequest request) {
         participantRepository
@@ -241,23 +239,23 @@ public class ConversationService {
         return getById(conversationId);
     }
     
+    /**
+     * Add members to conversation
+     */
     @Transactional
     public ConversationResponse addMembers(String conversationId, String requesterId, AddMembersRequest request) {
         participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, requesterId)
                 .orElseThrow(() -> new ApiException("You are not a participant"));
 
-        // Validate users exist
         List<User> users = userRepository.findAllById(request.getMemberIds());
         if (users.size() != request.getMemberIds().size()) {
             throw new ApiException("Some users not found");
         }
         
-        // Add participants
         for (String userId : request.getMemberIds()) {
-            // Check if already participant
             if (participantRepository.existsByConversationIdAndUserIdAndIsActiveTrue(conversationId, userId)) {
-                continue; // Skip if already participant
+                continue;
             }
             
             ConversationParticipant participant = new ConversationParticipant();
@@ -274,10 +272,12 @@ public class ConversationService {
         return getById(conversationId);
     }
     
+    /**
+     * Update participant role (only admins allowed)
+     */
     @Transactional
     public ConversationResponse updateParticipantRole(String conversationId, String participantId, 
                                                      String requesterId, UpdateParticipantRoleRequest request) {
-        // Check if requester is admin
         ConversationParticipant requesterParticipant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, requesterId)
                 .orElseThrow(() -> new ApiException("You are not a participant"));
@@ -286,30 +286,29 @@ public class ConversationService {
             throw new ApiException("Only admins can update roles");
         }
         
-        // Find participant to update
         ConversationParticipant participant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, participantId)
                 .orElseThrow(() -> new ApiException("Participant not found in this conversation"));
         
         ParticipantRole requestedRole = ParticipantRole.valueOf(request.getRole().toUpperCase());
 
-        // Prevent admins from demoting other admins
         if (participant.getRole() == ParticipantRole.ADMIN
                 && !participant.getUserId().equals(requesterId)
                 && requestedRole != ParticipantRole.ADMIN) {
             throw new ApiException("You cannot change another admin's role");
         }
 
-        // Update role
         participant.setRole(requestedRole);
         participantRepository.save(participant);
         
         return getById(conversationId);
     }
     
+    /**
+     * Remove participant from conversation (only admins allowed)
+     */
     @Transactional
     public void removeParticipant(String conversationId, String participantId, String requesterId) {
-        // Check if requester is admin
         ConversationParticipant requesterParticipant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, requesterId)
                 .orElseThrow(() -> new ApiException("You are not a participant"));
@@ -318,7 +317,6 @@ public class ConversationService {
             throw new ApiException("Only admins can remove participants");
         }
         
-        // Find participant to remove
         ConversationParticipant participant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, participantId)
                 .orElseThrow(() -> new ApiException("Participant not found in this conversation"));
@@ -328,11 +326,13 @@ public class ConversationService {
             throw new ApiException("You cannot remove another admin from the conversation");
         }
         
-        // Deactivate participant
         participant.setActive(false);
         participantRepository.save(participant);
     }
 
+    /**
+     * Update group conversation avatar
+     */
     @Transactional
     public ConversationResponse updateGroupAvatar(String conversationId, String requesterId, org.springframework.web.multipart.MultipartFile file) {
         Conversation conversation = conversationRepository.findById(conversationId)
@@ -352,26 +352,28 @@ public class ConversationService {
         return getById(conversationId);
     }
     
+    /**
+     * User leaves conversation
+     */
     @Transactional
     public void leaveConversation(String conversationId, String userId) {
         ConversationParticipant participant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, userId)
                 .orElseThrow(() -> new ApiException("You are not a participant"));
         
-        // Deactivate participant
         participant.setActive(false);
         participantRepository.save(participant);
     }
 
+    /**
+     * Mark conversation as read: update lastReadMessageId and unreadCount
+     */
     @Transactional
     public void markAsSeen(String conversationId, String userId) {
-        // Check if user is participant
         ConversationParticipant participant = participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(conversationId, userId)
                 .orElseThrow(() -> new ApiException("You are not a participant"));
         
-        // Get the latest message in this conversation to mark as read
-        // Messages are ordered by createdAt DESC, so first message is the latest
         org.springframework.data.domain.Page<Message> latestMessagesPage = messageRepository.findByConversationIdOrderByCreatedAtDesc(
             conversationId, 
             org.springframework.data.domain.PageRequest.of(0, 1)
@@ -384,38 +386,35 @@ public class ConversationService {
         if (!latestMessages.isEmpty()) {
             Message latestMessage = latestMessages.get(0);
             lastReadMessageId = latestMessage.getId();
-            // Update last seen time to the latest message's createdAt (or now if message is newer)
             participant.setLastSeenAt(latestMessage.getCreatedAt().isAfter(now) ? now : latestMessage.getCreatedAt());
         } else {
-            // No messages yet, just update timestamp
             participant.setLastSeenAt(now);
         }
         
-        // Update last read message ID and reset unread count
         participant.setLastReadMessageId(lastReadMessageId);
         participant.setUnreadCount(0);
         participantRepository.save(participant);
         
-        // Publish MESSAGE_SEEN event to Kafka for real-time notification
         Map<String, Object> eventData = new java.util.HashMap<>();
         eventData.put("userId", userId);
         eventData.put("conversationId", conversationId);
         eventData.put("lastSeenAt", participant.getLastSeenAt());
         eventData.put("unreadCount", participant.getUnreadCount());
-        // Always include lastReadMessageId, even if null (frontend can handle null)
         eventData.put("lastReadMessageId", lastReadMessageId);
         kafkaEventPublisher.publishMessageEvent("MESSAGE_SEEN", conversationId, eventData);
         
         log.info("User {} marked conversation {} as seen. Last read message: {}", userId, conversationId, lastReadMessageId);
     }
     
+    /**
+     * Create sample conversation for new user
+     */
     @Transactional
     public ConversationResponse createSampleConversation(String userId) {
-        // Create a sample group conversation
         ConversationRequest request = new ConversationRequest();
         request.setType("GROUP");
         request.setGroupName("Welcome to Chat App!");
-        request.setMemberIds(List.of()); // No additional members, just the creator
+        request.setMemberIds(List.of());
         
         ConversationResponse response = create(userId, request);
         
@@ -424,7 +423,7 @@ public class ConversationService {
     }
 
     /**
-     * Ensure a DIRECT conversation exists between two users. If not, create one.
+     * Ensure DIRECT conversation exists between two users, create if not exists
      */
     @Transactional
     public ConversationResponse ensureDirectBetweenUsers(String userAId, String userBId) {
@@ -432,18 +431,15 @@ public class ConversationService {
             throw new ApiException("Cannot create direct conversation with self");
         }
 
-        // Find all conversations each user participates in
         List<ConversationParticipant> aParts = participantRepository.findByUserIdAndIsActiveTrue(userAId);
         List<ConversationParticipant> bParts = participantRepository.findByUserIdAndIsActiveTrue(userBId);
 
         java.util.Set<String> aConvIds = aParts.stream().map(ConversationParticipant::getConversationId).collect(java.util.stream.Collectors.toSet());
         java.util.Set<String> bConvIds = bParts.stream().map(ConversationParticipant::getConversationId).collect(java.util.stream.Collectors.toSet());
 
-        // Intersection of conversation ids
         aConvIds.retainAll(bConvIds);
 
         if (!aConvIds.isEmpty()) {
-            // Load conversations and pick a DIRECT one with exactly two active participants
             List<Conversation> candidates = conversationRepository.findByIds(new java.util.ArrayList<>(aConvIds));
             for (Conversation c : candidates) {
                 if (c.getType() == ConversationType.DIRECT) {
@@ -455,12 +451,10 @@ public class ConversationService {
             }
         }
 
-        // Create a new DIRECT conversation
         Conversation conversation = new Conversation();
         conversation.setType(ConversationType.DIRECT);
         Conversation saved = conversationRepository.save(conversation);
 
-        // Create two participants
         ConversationParticipant pA = new ConversationParticipant();
         pA.setConversationId(saved.getId());
         pA.setUserId(userAId);
@@ -482,6 +476,9 @@ public class ConversationService {
         return conversationMapper.toResponse(saved);
     }
     
+    /**
+     * Toggle favorite for conversation
+     */
     @Transactional
     public ConversationResponse toggleFavorite(String conversationId, String userId) {
         ConversationParticipant participant = participantRepository
@@ -496,11 +493,9 @@ public class ConversationService {
         
         ConversationResponse response = conversationMapper.toResponse(conversation);
         
-        // Get participants
         List<ConversationParticipant> conversationParticipants = participantRepository
             .findByConversationIdAndIsActiveTrue(conversationId);
         
-        // Convert to ParticipantResponse
         List<ConversationResponse.ParticipantResponse> participantResponses = conversationParticipants.stream()
             .map(p -> {
                 User user = userRepository.findById(p.getUserId()).orElse(null);
@@ -522,7 +517,6 @@ public class ConversationService {
         
         response.setParticipants(participantResponses);
         
-        // Set favorite status
         ConversationParticipant userParticipant = conversationParticipants.stream()
             .filter(p -> p.getUserId().equals(userId))
             .findFirst()
@@ -564,17 +558,18 @@ public class ConversationService {
         return response;
     }
     
+    /**
+     * Pin message in conversation
+     */
     @Transactional
     public ConversationResponse pinMessage(String conversationId, String messageId, String userId) {
         Conversation conversation = conversationRepository.findById(conversationId)
             .orElseThrow(() -> new ApiException("Conversation not found"));
         
-        // Check if user is participant
         if (!participantRepository.existsByConversationIdAndUserIdAndIsActiveTrue(conversationId, userId)) {
             throw new ApiException("You are not a participant");
         }
         
-        // Verify message exists and belongs to conversation
         Message message = messageRepository.findById(messageId)
             .orElseThrow(() -> new ApiException("Message not found"));
         
@@ -582,7 +577,6 @@ public class ConversationService {
             throw new ApiException("Message does not belong to this conversation");
         }
         
-        // Pin the message
         conversation.setPinnedMessageId(messageId);
         conversation.setPinnedAt(Instant.now());
         conversation.setPinnedByUserId(userId);
@@ -591,17 +585,18 @@ public class ConversationService {
         return getById(conversationId);
     }
     
+    /**
+     * Unpin message in conversation
+     */
     @Transactional
     public ConversationResponse unpinMessage(String conversationId, String userId) {
         Conversation conversation = conversationRepository.findById(conversationId)
             .orElseThrow(() -> new ApiException("Conversation not found"));
         
-        // Check if user is participant
         if (!participantRepository.existsByConversationIdAndUserIdAndIsActiveTrue(conversationId, userId)) {
             throw new ApiException("You are not a participant");
         }
         
-        // Unpin the message
         conversation.setPinnedMessageId(null);
         conversation.setPinnedAt(null);
         conversation.setPinnedByUserId(null);
@@ -610,6 +605,9 @@ public class ConversationService {
         return getById(conversationId);
     }
     
+    /**
+     * Toggle mute for conversation
+     */
     @Transactional
     public ConversationResponse toggleMute(String conversationId, String userId) {
         ConversationParticipant participant = participantRepository
@@ -624,11 +622,9 @@ public class ConversationService {
         
         ConversationResponse response = conversationMapper.toResponse(conversation);
         
-        // Get participants
         List<ConversationParticipant> conversationParticipants = participantRepository
             .findByConversationIdAndIsActiveTrue(conversationId);
         
-        // Convert to ParticipantResponse
         List<ConversationResponse.ParticipantResponse> participantResponses = conversationParticipants.stream()
             .map(p -> {
                 User user = userRepository.findById(p.getUserId()).orElse(null);
@@ -650,7 +646,6 @@ public class ConversationService {
         
         response.setParticipants(participantResponses);
         
-        // Set mute status
         ConversationParticipant userParticipant = conversationParticipants.stream()
             .filter(p -> p.getUserId().equals(userId))
             .findFirst()
@@ -689,7 +684,6 @@ public class ConversationService {
             response.setAvatarUrl(conversation.getGroupAvatarUrl());
         }
         
-        // Set pinned message info
         if (conversation.getPinnedMessageId() != null) {
             response.setPinnedMessageId(conversation.getPinnedMessageId());
             response.setPinnedAt(conversation.getPinnedAt());

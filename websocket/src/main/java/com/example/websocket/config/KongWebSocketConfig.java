@@ -10,10 +10,6 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import com.example.websocket.ws.ChatWebSocketHandler;
 import com.example.websocket.security.KongHandshakeInterceptor;
 
-/**
- * WebSocket configuration for Kong Gateway mode
- * Kong handles JWT authentication, so we can simplify the interceptor
- */
 @Configuration
 @EnableWebSocket
 public class KongWebSocketConfig implements WebSocketConfigurer {

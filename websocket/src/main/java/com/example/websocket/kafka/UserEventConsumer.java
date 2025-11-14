@@ -21,6 +21,9 @@ public class UserEventConsumer {
         this.stringRedisTemplate = stringRedisTemplate;
     }
 
+    /**
+     * Handle user events from Kafka: online/offline, friend requests, call events
+     */
     @KafkaListener(topics = "${app.kafka.topics.user}")
     public void onUserEvent(ConsumerRecord<String, String> record,
                             @Header(name = "messageId", required = false) String messageIdHeader) {
@@ -64,36 +67,49 @@ public class UserEventConsumer {
         }
     }
     
+    /**
+     * Handle user online event
+     */
     private void handleUserOnline(String userId, String payload) {
-        // Send online status to all friends
         webSocketHandler.broadcastToUser(userId, payload);
         log.info("User {} is now online", userId);
     }
     
+    /**
+     * Handle user offline event
+     */
     private void handleUserOffline(String userId, String payload) {
-        // Send offline status to all friends
         webSocketHandler.broadcastToUser(userId, payload);
         log.info("User {} is now offline", userId);
     }
     
+    /**
+     * Handle friend request event
+     */
     private void handleFriendRequest(String userId, String payload) {
-        // Send friend request notification to target user
         webSocketHandler.broadcastToUser(userId, payload);
         log.info("Friend request sent to user {}", userId);
     }
     
+    /**
+     * Handle friend request accepted event
+     */
     private void handleFriendRequestAccepted(String userId, String payload) {
-        // Send friend request accepted notification to requester
         webSocketHandler.broadcastToUser(userId, payload);
         log.info("Friend request accepted for user {}", userId);
     }
     
+    /**
+     * Handle call events (initiated, answered, rejected, ended, missed)
+     */
     private void handleCallEvent(String userId, String payload) {
-        // Send call event to target user
         webSocketHandler.broadcastToUser(userId, payload);
         log.info("Call event sent to user {}", userId);
     }
 
+    /**
+     * Extract field from JSON string
+     */
     private String extractField(String json, String key) {
         String pattern = "\"" + key + "\":\"";
         int start = json.indexOf(pattern);

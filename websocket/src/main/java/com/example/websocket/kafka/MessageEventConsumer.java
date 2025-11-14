@@ -24,7 +24,9 @@ public class MessageEventConsumer {
         this.stringRedisTemplate = stringRedisTemplate;
     }
 
-    // Expect event payload contains conversationId and content fields
+    /**
+     * Handle message events from Kafka: broadcast to WebSocket sessions in conversation
+     */
     @KafkaListener(topics = "${app.kafka.topics.message}")
     public void onMessageEvent(ConsumerRecord<String, String> record,
                                @Header(name = "messageId", required = false) String messageIdHeader) {
@@ -42,12 +44,10 @@ public class MessageEventConsumer {
 
             String messageId = messageIdHeader != null ? messageIdHeader : getText(root.path("data"), "messageId");
 
-            // Dedup by messageId if present
             if (messageId != null && !messageId.isEmpty()) {
                 String key = "processed:" + messageId;
                 Boolean first = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", java.time.Duration.ofDays(1));
                 if (Boolean.FALSE.equals(first)) {
-                    // already processed
                     return;
                 }
             }
@@ -72,6 +72,9 @@ public class MessageEventConsumer {
         }
     }
 
+    /**
+     * Extract text value from JsonNode
+     */
     private String getText(JsonNode node, String field) {
         JsonNode value = node.path(field);
         if (value.isMissingNode() || value.isNull()) {

@@ -33,6 +33,9 @@ public class FriendApiClient {
         this.friendsEndpoint = "/api/friends";
     }
 
+    /**
+     * Get friend list from server API
+     */
     public List<FriendInfo> getFriends(String accessToken) {
         if (accessToken == null || accessToken.isBlank()) {
             return Collections.emptyList();
@@ -78,6 +81,9 @@ public class FriendApiClient {
         }
     }
 
+    /**
+     * Extract text value from JsonNode
+     */
     private String text(JsonNode node, String field) {
         JsonNode value = node.get(field);
         if (value == null || value.isNull()) {

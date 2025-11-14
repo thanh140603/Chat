@@ -19,8 +19,7 @@ import io.jsonwebtoken.security.Keys;
 import javax.crypto.SecretKey;
 
 /**
- * Utility class để lấy user information từ Kong Gateway headers cho WebSocket
- * Kong đã verify JWT và thêm user info vào headers
+ * Utility class lấy user information từ Kong Gateway headers cho WebSocket
  */
 @Component
 public class KongWebSocketUserExtractor {
@@ -37,7 +36,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Lấy userId từ Kong headers
+     * Get userId from Kong headers or JWT token
      */
     public String getUserId(ServerHttpRequest request) {
         String fromHeader = request.getHeaders().getFirst(USER_ID_HEADER);
@@ -48,7 +47,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Lấy username từ Kong headers
+     * Get username from Kong headers or JWT token
      */
     public String getUsername(ServerHttpRequest request) {
         String fromHeader = request.getHeaders().getFirst(USERNAME_HEADER);
@@ -59,7 +58,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Kiểm tra user đã được authenticate chưa
+     * Check if user is authenticated
      */
     public boolean isAuthenticated(ServerHttpRequest request) {
         String userId = getUserId(request);
@@ -67,7 +66,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Lấy user info dưới dạng object
+     * Get user info as object
      */
     public KongWebSocketUserInfo getUserInfo(ServerHttpRequest request) {
         return new KongWebSocketUserInfo(
@@ -77,7 +76,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Thêm user info vào WebSocket attributes
+     * Add user info to WebSocket session attributes
      */
     public void addUserInfoToAttributes(ServerHttpRequest request, Map<String, Object> attributes) {
         KongWebSocketUserInfo userInfo = getUserInfo(request);
@@ -137,7 +136,7 @@ public class KongWebSocketUserExtractor {
     }
     
     /**
-     * Data class chứa user info từ Kong cho WebSocket
+     * Data class containing user info from Kong Gateway
      */
     public static class KongWebSocketUserInfo {
         private final String userId;

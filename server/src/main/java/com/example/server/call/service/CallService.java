@@ -51,9 +51,11 @@ public class CallService {
         this.kafkaEventPublisher = kafkaEventPublisher;
     }
     
+    /**
+     * Initiate call: create call record and publish event
+     */
     @Transactional
     public CallResponse initiateCall(String callerId, InitiateCallRequest request) {
-        // Validate conversation exists and is DIRECT type
         Conversation conversation = conversationRepository.findById(request.getConversationId())
                 .orElseThrow(() -> new ApiException("Conversation not found"));
         
@@ -61,29 +63,24 @@ public class CallService {
             throw new ApiException("Calls are only supported for direct conversations");
         }
         
-        // Verify caller is participant
         participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(request.getConversationId(), callerId)
                 .orElseThrow(() -> new ApiException("You are not a participant in this conversation"));
         
-        // Verify receiver is participant
         participantRepository
                 .findByConversationIdAndUserIdAndIsActiveTrue(request.getConversationId(), request.getReceiverId())
                 .orElseThrow(() -> new ApiException("Receiver is not a participant in this conversation"));
         
-        // Check if receiver is the other participant in DIRECT conversation
         List<ConversationParticipant> participants = participantRepository
                 .findByConversationIdAndIsActiveTrue(request.getConversationId());
         if (participants.size() != 2) {
             throw new ApiException("Direct conversation must have exactly 2 participants");
         }
         
-        // Check if there's already an active call - if so, end it first
         Call existingCall = callRepository.findActiveCallByConversationId(request.getConversationId())
                 .orElse(null);
         if (existingCall != null) {
             log.info("Ending existing active call before initiating new one: callId={}", existingCall.getId());
-            // End the existing call
             existingCall.setStatus(CallStatus.ENDED);
             existingCall.setEndedAt(Instant.now());
             existingCall.setEndedBy(callerId);
@@ -94,7 +91,6 @@ public class CallService {
             }
             callRepository.save(existingCall);
             
-            // Notify both participants
             String otherUserId = existingCall.getCallerId().equals(callerId) 
                 ? existingCall.getReceiverId() 
                 : existingCall.getCallerId();
@@ -107,7 +103,6 @@ public class CallService {
             kafkaEventPublisher.publishUserEvent("CALL_ENDED", otherUserId, endEventData);
         }
         
-        // Also check and end any other active calls for the caller or receiver in different conversations
         Set<String> processedCallIds = new HashSet<>();
         if (existingCall != null) {
             processedCallIds.add(existingCall.getId());
@@ -131,7 +126,6 @@ public class CallService {
                 callRepository.save(activeCall);
                 processedCallIds.add(activeCall.getId());
                 
-                // Notify the other participant
                 String otherUserId = activeCall.getCallerId().equals(callerId) 
                     ? activeCall.getReceiverId() 
                     : activeCall.getCallerId();
@@ -160,7 +154,6 @@ public class CallService {
                 callRepository.save(activeCall);
                 processedCallIds.add(activeCall.getId());
                 
-                // Notify the other participant (the one who is not the receiver of the new call)
                 String otherUserId = activeCall.getCallerId().equals(request.getReceiverId()) 
                     ? activeCall.getReceiverId() 
                     : activeCall.getCallerId();
@@ -174,7 +167,6 @@ public class CallService {
             }
         }
         
-        // Create new call
         Call call = new Call();
         call.setConversationId(request.getConversationId());
         call.setCallerId(callerId);
@@ -185,13 +177,11 @@ public class CallService {
         
         Call savedCall = callRepository.save(call);
         
-        // Get user info for response
         User caller = userRepository.findById(callerId)
                 .orElseThrow(() -> new ApiException("Caller not found"));
         User receiver = userRepository.findById(request.getReceiverId())
                 .orElseThrow(() -> new ApiException("Receiver not found"));
         
-        // Publish CALL_INITIATED event
         Map<String, Object> eventData = new HashMap<>();
         eventData.put("callId", savedCall.getId());
         eventData.put("conversationId", savedCall.getConversationId());
@@ -210,33 +200,31 @@ public class CallService {
         return toResponse(savedCall, caller, receiver);
     }
     
+    /**
+     * Answer call: update status and publish event
+     */
     @Transactional
     public CallResponse answerCall(String callId, String userId) {
         Call call = callRepository.findById(callId)
                 .orElseThrow(() -> new ApiException("Call not found"));
         
-        // Verify user is the receiver
         if (!call.getReceiverId().equals(userId)) {
             throw new ApiException("Only the receiver can answer this call");
         }
         
-        // Verify call is in INITIATED status
         if (call.getStatus() != CallStatus.INITIATED) {
             throw new ApiException("Call is not in a state that can be answered");
         }
         
-        // Update call status
         call.setStatus(CallStatus.ANSWERED);
         call.setAnsweredAt(Instant.now());
         Call savedCall = callRepository.save(call);
         
-        // Get user info
         User caller = userRepository.findById(call.getCallerId())
                 .orElseThrow(() -> new ApiException("Caller not found"));
         User receiver = userRepository.findById(call.getReceiverId())
                 .orElseThrow(() -> new ApiException("Receiver not found"));
         
-        // Publish CALL_ANSWERED event
         Map<String, Object> eventData = new HashMap<>();
         eventData.put("callId", savedCall.getId());
         eventData.put("conversationId", savedCall.getConversationId());
@@ -250,34 +238,32 @@ public class CallService {
         return toResponse(savedCall, caller, receiver);
     }
     
+    /**
+     * Reject call: update status and publish event
+     */
     @Transactional
     public CallResponse rejectCall(String callId, String userId) {
         Call call = callRepository.findById(callId)
                 .orElseThrow(() -> new ApiException("Call not found"));
         
-        // Verify user is the receiver
         if (!call.getReceiverId().equals(userId)) {
             throw new ApiException("Only the receiver can reject this call");
         }
         
-        // Verify call is in INITIATED status
         if (call.getStatus() != CallStatus.INITIATED) {
             throw new ApiException("Call is not in a state that can be rejected");
         }
         
-        // Update call status
         call.setStatus(CallStatus.REJECTED);
         call.setEndedAt(Instant.now());
         call.setEndedBy(userId);
         Call savedCall = callRepository.save(call);
         
-        // Get user info
         User caller = userRepository.findById(call.getCallerId())
                 .orElseThrow(() -> new ApiException("Caller not found"));
         User receiver = userRepository.findById(call.getReceiverId())
                 .orElseThrow(() -> new ApiException("Receiver not found"));
         
-        // Publish CALL_REJECTED event
         Map<String, Object> eventData = new HashMap<>();
         eventData.put("callId", savedCall.getId());
         eventData.put("conversationId", savedCall.getConversationId());
@@ -291,45 +277,41 @@ public class CallService {
         return toResponse(savedCall, caller, receiver);
     }
     
+    /**
+     * End call: calculate duration, update status and publish event
+     */
     @Transactional
     public CallResponse endCall(String callId, String userId) {
         Call call = callRepository.findById(callId)
                 .orElseThrow(() -> new ApiException("Call not found"));
         
-        // Verify user is caller or receiver
         if (!call.getCallerId().equals(userId) && !call.getReceiverId().equals(userId)) {
             throw new ApiException("You are not a participant in this call");
         }
         
-        // Verify call is in ANSWERED status
         if (call.getStatus() != CallStatus.ANSWERED) {
             throw new ApiException("Call is not active");
         }
         
-        // Calculate duration
         Instant now = Instant.now();
         int duration = 0;
         if (call.getAnsweredAt() != null) {
             duration = (int) (now.getEpochSecond() - call.getAnsweredAt().getEpochSecond());
         }
         
-        // Update call status
         call.setStatus(CallStatus.ENDED);
         call.setEndedAt(now);
         call.setEndedBy(userId);
         call.setDuration(duration);
         Call savedCall = callRepository.save(call);
         
-        // Get user info
         User caller = userRepository.findById(call.getCallerId())
                 .orElseThrow(() -> new ApiException("Caller not found"));
         User receiver = userRepository.findById(call.getReceiverId())
                 .orElseThrow(() -> new ApiException("Receiver not found"));
         
-        // Determine other user ID for event
         String otherUserId = call.getCallerId().equals(userId) ? call.getReceiverId() : call.getCallerId();
         
-        // Publish CALL_ENDED event
         Map<String, Object> eventData = new HashMap<>();
         eventData.put("callId", savedCall.getId());
         eventData.put("conversationId", savedCall.getConversationId());
@@ -344,6 +326,9 @@ public class CallService {
         return toResponse(savedCall, caller, receiver);
     }
     
+    /**
+     * Get call history for user or conversation
+     */
     public Page<CallResponse> getCallHistory(String userId, String conversationId, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
         Page<Call> calls;
@@ -361,6 +346,9 @@ public class CallService {
         });
     }
     
+    /**
+     * Get active calls list for user
+     */
     public List<CallResponse> getActiveCalls(String userId) {
         List<Call> activeCalls = callRepository.findActiveCallsByUserId(userId);
         return activeCalls.stream().map(call -> {
@@ -370,11 +358,13 @@ public class CallService {
         }).toList();
     }
     
+    /**
+     * Get call info by ID
+     */
     public CallResponse getCallById(String callId, String userId) {
         Call call = callRepository.findById(callId)
                 .orElseThrow(() -> new ApiException("Call not found"));
         
-        // Verify user is a participant
         if (!call.getCallerId().equals(userId) && !call.getReceiverId().equals(userId)) {
             throw new ApiException("You are not a participant in this call");
         }
@@ -385,6 +375,9 @@ public class CallService {
         return toResponse(call, caller, receiver);
     }
     
+    /**
+     * Convert Call entity to CallResponse DTO
+     */
     private CallResponse toResponse(Call call, User caller, User receiver) {
         CallResponse response = new CallResponse();
         response.setId(call.getId());
