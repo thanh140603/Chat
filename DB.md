@@ -1,129 +1,166 @@
 # 🧩 Database Design — Chat Application
 
 **Database Engine:** MongoDB  
-**Design Principle:** Tách `participants` ra bảng riêng để tránh quan hệ many-to-many giữa `User` và `Conversation`.  
-**Normalization:** Equivalent to 3NF (giảm trùng lặp dữ liệu, dễ mở rộng).  
+**Design Principle:** Separate `participants` into a separate collection to avoid many-to-many relationship between `User` and `Conversation`.  
+**Normalization:** Equivalent to 3NF (reduces data duplication, easy to extend).  
 
 ---
 
-## 1️⃣ User (Người dùng)
+## 1️⃣ User
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh người dùng |
-| `username` | string | **Unique, Required** | Tên đăng nhập |
-| `hashedPassword` | string | **Required** | Mật khẩu mã hoá |
-| `displayName` | string | **Required** | Tên hiển thị |
-| `email` | string | **Unique** | Email người dùng |
-| `avatarUrl` | string |  | URL ảnh đại diện |
-| `avatarId` | string |  | ID ảnh (nếu dùng storage) |
-| `bio` | string |  | Giới thiệu ngắn |
-| `phone` | string |  | Số điện thoại |
-| `createdAt` | datetime | default: now | Ngày tạo |
-| `updatedAt` | datetime | auto-updated | Ngày cập nhật |
+| `id` | string | **Primary Key** | User identifier |
+| `username` | string | **Unique, Required** | Username |
+| `hashedPassword` | string | **Required** | Hashed password |
+| `displayName` | string | **Required** | Display name |
+| `email` | string | **Unique** | User email |
+| `avatarUrl` | string |  | Avatar image URL |
+| `avatarId` | string |  | Avatar image ID (if using storage) |
+| `bio` | string |  | Short bio |
+| `phone` | string |  | Phone number |
+| `createdAt` | datetime | default: now | Creation date |
+| `updatedAt` | datetime | auto-updated | Last update date |
 
 📘 **Indexes**
-- username  
-- email  
+- `username` (unique)  
+- `email` (unique)  
 
 ---
 
-## 2️⃣ FriendRequest (Yêu cầu kết bạn)
+## 2️⃣ FriendRequest
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh yêu cầu |
-| `from` | User (ref) | **Required** | Người gửi yêu cầu |
-| `to` | User (ref) | **Required** | Người nhận yêu cầu |
-| `message` | string |  | Tin nhắn kèm theo |
-| `createdAt` | datetime | default: now | Thời điểm gửi |
-| `updatedAt` | datetime | auto-updated | Thời điểm cập nhật |
+| `id` | string | **Primary Key** | Request identifier |
+| `from` | string (User ref) | **Required** | Sender user ID |
+| `to` | string (User ref) | **Required** | Receiver user ID |
+| `message` | string |  | Optional message |
+| `createdAt` | datetime | default: now | Creation date |
+| `updatedAt` | datetime | auto-updated | Last update date |
 
 📘 **Indexes**
-- (from, to)
+- `(from, to)` - unique compound index
 
 ---
 
-## 3️⃣ Friend (Bạn bè)
+## 3️⃣ Friend
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh quan hệ bạn bè |
-| `userA` | User (ref) | **Required** | Người dùng A |
-| `userB` | User (ref) | **Required** | Người dùng B |
-| `createdAt` | datetime | default: now | Thời điểm trở thành bạn |
-| `updatedAt` | datetime | auto-updated | Thời điểm cập nhật |
+| `id` | string | **Primary Key** | Friendship identifier |
+| `userA` | string (User ref) | **Required** | User A ID |
+| `userB` | string (User ref) | **Required** | User B ID |
+| `createdAt` | datetime | default: now | Friendship creation date |
+| `updatedAt` | datetime | auto-updated | Last update date |
 
 📘 **Indexes**
-- (userA, userB) – unique  
-- (userB, userA)
+- `(userA, userB)` - unique compound index  
+- `(userB, userA)` - compound index for reverse lookup
 
 ---
 
-## 4️⃣ Conversation (Cuộc trò chuyện)
+## 4️⃣ Conversation
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh cuộc trò chuyện |
-| `type` | enum(`direct`, `group`) | **Required** | Loại trò chuyện |
-| `group.name` | string |  | Tên nhóm (nếu group) |
-| `group.createdBy` | User (ref) |  | Người tạo nhóm |
-| `group.avatarUrl` | string |  | Ảnh nhóm |
-| `lastMessage.content` | string |  | Nội dung tin cuối cùng |
-| `lastMessage.createdAt` | datetime |  | Thời điểm tin cuối cùng |
-| `lastMessage.sender` | User (ref) |  | Người gửi tin cuối cùng |
-| `createdAt` | datetime | default: now | Ngày tạo |
-| `updatedAt` | datetime | auto-updated | Ngày cập nhật |
+| `id` | string | **Primary Key** | Conversation identifier |
+| `type` | enum(`DIRECT`, `GROUP`) | **Required** | Conversation type |
+| `groupName` | string |  | Group name (for GROUP type) |
+| `groupCreatedByUserId` | string (User ref) |  | Group creator user ID |
+| `groupAvatarUrl` | string |  | Group avatar URL |
+| `lastMessageContent` | string |  | Last message content (snapshot) |
+| `lastMessageCreatedAt` | datetime |  | Last message timestamp |
+| `lastMessageSenderId` | string (User ref) |  | Last message sender ID |
+| `pinnedMessageId` | string (Message ref) |  | Pinned message ID |
+| `pinnedAt` | datetime |  | When message was pinned |
+| `pinnedByUserId` | string (User ref) |  | User who pinned the message |
+| `createdAt` | datetime | default: now | Creation date |
+| `updatedAt` | datetime | auto-updated | Last update date |
 
 📘 **Indexes**
-- `lastMessage.createdAt`
 - `type`
+- `lastMessageCreatedAt`
 
 ---
 
-## 5️⃣ Participant (Thành viên cuộc trò chuyện)
+## 5️⃣ ConversationParticipant
 
-> ✅ **Bảng trung gian (link table)** giữa `User` và `Conversation`.
+> ✅ **Link table** between `User` and `Conversation`.
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh bản ghi |
-| `conversationId` | Conversation (ref) | **Required** | Cuộc trò chuyện |
-| `userId` | User (ref) | **Required** | Người tham gia |
-| `joinedAt` | datetime | default: now | Ngày tham gia |
-| `role` | enum(`admin`, `member`) | default: `member` | Vai trò trong nhóm |
-| `isActive` | boolean | default: true | Còn trong nhóm không |
-| `lastSeenAt` | datetime | nullable | Lần xem tin cuối |
-| `unreadCount` | number | default: 0 | Số tin chưa đọc |
-| `createdAt` | datetime | default: now | Ngày tạo bản ghi |
-| `updatedAt` | datetime | auto-updated | Ngày cập nhật |
+| `id` | string | **Primary Key** | Participant record identifier |
+| `conversationId` | string (Conversation ref) | **Required** | Conversation ID |
+| `userId` | string (User ref) | **Required** | Participant user ID |
+| `joinedAt` | datetime | default: now | Join date |
+| `role` | enum(`ADMIN`, `MEMBER`) | default: `MEMBER` | Role in group |
+| `isActive` | boolean | default: true | Active status |
+| `lastSeenAt` | datetime | nullable | Last seen timestamp |
+| `lastReadMessageId` | string (Message ref) | nullable | Last read message ID |
+| `unreadCount` | number | default: 0 | Unread message count |
+| `isFavorite` | boolean | default: false | Favorite status |
+| `isMuted` | boolean | default: false | Mute status (no notifications) |
+| `createdAt` | datetime | default: now | Creation date |
+| `updatedAt` | datetime | auto-updated | Last update date |
 
 📘 **Indexes**
-- (conversationId, userId) — unique  
-- (userId, isActive)  
-- (conversationId, isActive)
+- `(conversationId, userId)` - unique compound index  
+- `(userId, isActive)` - compound index  
+- `(conversationId, isActive)` - compound index
 
-> 💡 Mục đích:
-> - Tránh quan hệ many-to-many trực tiếp giữa `User` và `Conversation`
-> - Dễ scale khi conversation có hàng nghìn user (giống Discord)
+> 💡 Purpose:
+> - Avoid direct many-to-many relationship between `User` and `Conversation`
+> - Easy to scale when conversation has thousands of users (Discord-style)
 
 ---
 
-## 6️⃣ Message (Tin nhắn)
+## 6️⃣ Message
 
 | Field | Type | Constraints | Description |
 |--------|------|-------------|--------------|
-| `id` | string | **Primary Key** | Định danh tin nhắn |
-| `senderId` | User (ref) | **Required** | Người gửi |
-| `conversationId` | Conversation (ref) | **Required** | Cuộc trò chuyện |
-| `content` | string |  | Nội dung tin nhắn |
-| `imageUrl` | string |  | Ảnh đính kèm |
-| `createdAt` | datetime | default: now | Ngày gửi |
-| `updatedAt` | datetime | auto-updated | Ngày cập nhật |
+| `id` | string | **Primary Key** | Message identifier |
+| `senderId` | string (User ref) | **Required** | Sender user ID |
+| `conversationId` | string (Conversation ref) | **Required** | Conversation ID |
+| `content` | string |  | Message content |
+| `imageUrl` | string |  | Attached image URL |
+| `messageId` | string | **Unique, Sparse** | Idempotency key (client or server-generated) |
+| `createdAt` | datetime | default: now | Creation date |
+| `originalCreatedAt` | datetime |  | Original creation time (never changes) |
+| `updatedAt` | datetime | nullable | Update date (only set when edited) |
+| `forwardedFromMessageId` | string (Message ref) | nullable | Original message ID if forwarded |
+| `forwardedFromConversationId` | string (Conversation ref) | nullable | Original conversation ID |
+| `forwardedFromSenderId` | string (User ref) | nullable | Original sender ID |
+| `forwardedFromSenderName` | string | nullable | Original sender name (for display) |
+| `forwardedAt` | datetime | nullable | Forward timestamp |
 
 📘 **Indexes**
-- (conversationId, createdAt)
-- (senderId)
+- `(conversationId, createdAt)` - compound index for conversation messages
+- `senderId`
+- `messageId` - unique sparse index (for idempotency)
+
+---
+
+## 7️⃣ Call
+
+| Field | Type | Constraints | Description |
+|--------|------|-------------|--------------|
+| `id` | string | **Primary Key** | Call identifier |
+| `conversationId` | string (Conversation ref) | **Required** | DIRECT conversation ID |
+| `callerId` | string (User ref) | **Required** | Caller user ID |
+| `receiverId` | string (User ref) | **Required** | Receiver user ID |
+| `type` | enum(`VOICE`, `VIDEO`) | **Required** | Call type |
+| `status` | enum(`INITIATED`, `ANSWERED`, `REJECTED`, `ENDED`, `MISSED`) | **Required** | Call status |
+| `startedAt` | datetime | default: now | Call initiation time |
+| `answeredAt` | datetime | nullable | Call answer time |
+| `endedAt` | datetime | nullable | Call end time |
+| `endedBy` | string (User ref) | nullable | User who ended the call |
+| `duration` | integer | nullable | Call duration in seconds |
+
+📘 **Indexes**
+- `conversationId`
+- `callerId`
+- `receiverId`
 
 ---
 
@@ -131,20 +168,26 @@
 
 | From | Relationship | To | Type |
 |-------|---------------|----|------|
-| `User` | 1—n | `FriendRequest.from / to` | Request gửi/nhận |
-| `User` | n—n | `Friend` | Quan hệ bạn bè |
-| `User` | 1—n | `Participant.userId` | Tham gia nhiều cuộc trò chuyện |
-| `Conversation` | 1—n | `Participant.conversationId` | Có nhiều thành viên |
-| `Conversation` | 1—n | `Message` | Chứa nhiều tin nhắn |
-| `User` | 1—n | `Message.senderId` | Gửi nhiều tin nhắn |
+| `User` | 1—n | `FriendRequest.from / to` | Send/receive friend requests |
+| `User` | n—n | `Friend` | Friendship relationship |
+| `User` | 1—n | `ConversationParticipant.userId` | Participate in multiple conversations |
+| `Conversation` | 1—n | `ConversationParticipant.conversationId` | Has multiple participants |
+| `Conversation` | 1—n | `Message` | Contains multiple messages |
+| `User` | 1—n | `Message.senderId` | Send multiple messages |
+| `Conversation` | 1—n | `Call` | Has multiple call records (DIRECT only) |
+| `User` | 1—n | `Call.callerId / receiverId` | Initiate/receive calls |
 
 ---
 
 ## 🧠 Design Highlights
 
-- ✅ `Participant` giúp **mở rộng quy mô dễ dàng** (Discord-style scalability)  
-- ⚡ Tối ưu cho truy vấn **conversation list** và **unread counter**  
-- 🔒 `FriendRequest` + `Friend` giúp **logic kết bạn rõ ràng**  
-- 📈 Có thể **shard theo `conversationId`** để scale out hệ thống  
+- ✅ `ConversationParticipant` enables **easy scaling** (Discord-style scalability)  
+- ⚡ Optimized for **conversation list** and **unread counter** queries  
+- 🔒 `FriendRequest` + `Friend` provides **clear friend logic**  
+- 📈 Can **shard by `conversationId`** to scale out the system  
+- 💬 Message **idempotency** via `messageId` field  
+- 📌 **Pinned messages** support for important messages  
+- 🔔 **Mute and favorite** features for user preferences  
+- 📞 **Call history** tracking for voice/video calls  
 
 ---
